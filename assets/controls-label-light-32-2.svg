@@ -1,0 +1,10 @@
+<svg width="70" height="32" viewBox="0 0 70 32" xmlns="http://www.w3.org/2000/svg">
+    <g fill="none" fill-rule="evenodd">
+        <rect fill-opacity=".08" fill="#7C7480" width="70" height="32" rx="16"/>
+        <text font-family="AlibabaPuHuiTi_3_65_Medium, Alibaba PuHuiTi 3.0" font-size="12" font-weight="400" fill="#333">
+                            <tspan x="28" y="19">Apply</tspan>
+                        </text>
+        <path d="M8 7h16v16H8z"/>
+        <path d="m22 9-4.333 12A.367.367 0 0 1 17 21l-2.333-4.667L10 14a.367.367 0 0 1 0-.667L22 9" stroke="#000" stroke-width="1.333" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+</svg>

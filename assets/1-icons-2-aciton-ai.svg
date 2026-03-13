@@ -1,0 +1,39 @@
+<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <defs>
+        <filter x="-47.7%" y="-22.2%" width="195.4%" height="144.3%" filterUnits="objectBoundingBox" id="xlemq4qo6c">
+            <feGaussianBlur stdDeviation="2.072" in="SourceGraphic"/>
+        </filter>
+        <filter x="-47.7%" y="-22.2%" width="195.4%" height="144.3%" filterUnits="objectBoundingBox" id="y3paduy3ad">
+            <feGaussianBlur stdDeviation="2.072" in="SourceGraphic"/>
+        </filter>
+        <filter x="-47.7%" y="-22.2%" width="195.4%" height="144.3%" filterUnits="objectBoundingBox" id="3ykm03bgge">
+            <feGaussianBlur stdDeviation="2.072" in="SourceGraphic"/>
+        </filter>
+        <filter x="-47.7%" y="-22.2%" width="195.4%" height="144.3%" filterUnits="objectBoundingBox" id="lde2xomz4f">
+            <feGaussianBlur stdDeviation="2.072" in="SourceGraphic"/>
+        </filter>
+        <filter x="-47.7%" y="-22.2%" width="195.4%" height="144.3%" filterUnits="objectBoundingBox" id="fa4dwqsclg">
+            <feGaussianBlur stdDeviation="2.072" in="SourceGraphic"/>
+        </filter>
+        <filter x="-47.7%" y="-22.2%" width="195.4%" height="144.3%" filterUnits="objectBoundingBox" id="z1nztd3ihh">
+            <feGaussianBlur stdDeviation="2.072" in="SourceGraphic"/>
+        </filter>
+        <path d="M10 0a1.515 1.515 0 1 1 0 3.03A6.97 6.97 0 1 0 16.97 10 1.515 1.515 0 1 1 20 10c0 5.523-4.477 10-10 10S0 15.523 0 10 4.477 0 10 0zm6.663 1.215c.132.054.237.16.292.292l.329.797c.107.26.311.47.57.582l.767.335a.557.557 0 0 1 0 1.021l-.767.335a1.087 1.087 0 0 0-.57.582l-.33.797a.537.537 0 0 1-.991 0l-.33-.797a1.087 1.087 0 0 0-.57-.582l-.766-.335a.557.557 0 0 1 0-1.021l.767-.335c.258-.113.462-.321.57-.582l.329-.797a.537.537 0 0 1 .7-.292z" id="ecq3pnpqfa"/>
+    </defs>
+    <g transform="translate(2 2)" fill="none" fill-rule="evenodd">
+        <mask id="1fm4zlt7qb" fill="#fff">
+            <use xlink:href="#ecq3pnpqfa"/>
+        </mask>
+        <use fill="#979797" fill-rule="nonzero" xlink:href="#ecq3pnpqfa"/>
+        <g mask="url(#1fm4zlt7qb)" opacity=".8">
+            <g transform="rotate(45 17.974 6.269)">
+                <ellipse fill="#0072E6" filter="url(#xlemq4qo6c)" cx="19.357" cy="15.064" rx="6.513" ry="14.026"/>
+                <ellipse fill="#7B5FDB" filter="url(#y3paduy3ad)" cx="22.578" cy="14.055" rx="6.513" ry="14.026"/>
+                <ellipse fill="#B943BE" filter="url(#3ykm03bgge)" cx="16.135" cy="14.055" rx="6.513" ry="14.026"/>
+                <ellipse fill="#DF1E95" filter="url(#lde2xomz4f)" cx="12.956" cy="14.055" rx="6.513" ry="14.026"/>
+                <ellipse fill="#F00065" filter="url(#fa4dwqsclg)" cx="9.734" cy="14.041" rx="6.513" ry="14.026"/>
+                <ellipse fill="#E9213D" filter="url(#z1nztd3ihh)" cx="6.513" cy="14.026" rx="6.513" ry="14.026"/>
+            </g>
+        </g>
+    </g>
+</svg>

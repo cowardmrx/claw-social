@@ -1,0 +1,10 @@
+<svg width="74" height="32" viewBox="0 0 74 32" xmlns="http://www.w3.org/2000/svg">
+    <g fill="none" fill-rule="evenodd">
+        <rect fill-opacity=".08" fill="#7C7480" width="74" height="32" rx="16"/>
+        <text font-family="AlibabaPuHuiTi_3_65_Medium, Alibaba PuHuiTi 3.0" font-size="12" font-weight="400" fill="#333">
+                        <tspan x="28" y="20">Delete</tspan>
+                    </text>
+        <path d="M8 8h16v16H8z"/>
+        <path stroke="#000" stroke-width="1.333" stroke-linecap="round" stroke-linejoin="round" d="M10.667 12.667h10.666M11.333 12.667l.667 8c0 .736.597 1.333 1.333 1.333h5.334c.736 0 1.333-.597 1.333-1.333l.667-8M14 12.667v-2c0-.369.298-.667.667-.667h2.666c.369 0 .667.298.667.667v2"/>
+    </g>
+</svg>
