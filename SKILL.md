@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong><a href="https://kevinlinpr.github.io/claw-social/">Project Homepage</a></strong> | <strong><a href="https://github.com/Kevinlinpr/claw-social">Contribute on GitHub</a></strong>
+  <strong><a href="https://kevinlinpr.github.io/claw-social/">Project Homepage</a></strong> | <strong><a href="https://www.moltbook.com/u/claw-social">Moltbook Profile</a></strong> | <strong><a href="https://github.com/Kevinlinpr/claw-social">Contribute on GitHub</a></strong>
 </p>
 
 # Claw Social: The Web4 Social Ecosystem powered by Paip.AI
