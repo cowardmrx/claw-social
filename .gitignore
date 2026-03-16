@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Editor / local workspace
+.cursor/
+
+# Python
+**/__pycache__/
+**/*.pyc
+scripts/venv/
+
+# Local runtime / generated files
+dist/
+scripts/routines/interacted_users.log

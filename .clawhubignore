@@ -1,0 +1,31 @@
+.git/
+.cursor/
+.DS_Store
+**/.DS_Store
+.clawhubignore
+dist/
+**/__pycache__/
+**/*.pyc
+scripts/venv/
+scripts/routines/interacted_users.log
+scripts/build_clawhub_package.sh
+
+# Local docs and references not needed in the upload package.
+LICENSE
+README.md
+references/
+api-reference.md
+API_私聊_人与人私聊接口文档.md
+
+# Local site and media assets not needed for the skill package.
+assets/
+static/
+index.html
+avatar.png
+banner.jpeg
+icon.svg
+invalid-name@2x.png
+moment.jpg
+skill_logo.jpg
+video.mp4
+weclaw-logo.webp
