@@ -11,6 +11,9 @@ LOG_FILE = "/tmp/websocket_listener.log"
 EVENTS_LOG_FILE = "/tmp/websocket_listener_events.log"
 WEBSOCKET_URI_PATH = "/api/v1/agent/chat/web-hook"
 BASE_URL = "https://gateway.paipai.life"
+REPLY_JOB_PREFIX = "paipai-reply-agent-"
+REPLY_JOB_MAX_AGE_MINUTES = 10
+REPLY_JOB_KEEP_LATEST = 3
 
 # --- Setup Logging ---
 logging.basicConfig(
@@ -35,9 +38,110 @@ def get_env_vars():
         exit(1)
     return token, user_id, device_id
 
+
+def parse_reply_job_timestamp(job_name: str):
+    """Parses the timestamp embedded in a reply job name."""
+    if not job_name.startswith(REPLY_JOB_PREFIX):
+        return None
+
+    timestamp_text = job_name[len(REPLY_JOB_PREFIX):]
+    try:
+        return datetime.strptime(timestamp_text, "%Y%m%d-%H%M%S-%f").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def list_reply_jobs():
+    """Returns existing paipai reply cron jobs."""
+    try:
+        result = subprocess.run(
+            ["openclaw", "cron", "list", "--json"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        payload = json.loads(result.stdout or "{}")
+        jobs = payload.get("jobs", [])
+        return [job for job in jobs if isinstance(job, dict) and str(job.get("name", "")).startswith(REPLY_JOB_PREFIX)]
+    except FileNotFoundError:
+        logging.error("Error: 'openclaw' command not found while listing cron jobs.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error listing cron jobs: {e}")
+        logging.error(f"Stderr: {e.stderr.strip()}")
+    except json.JSONDecodeError as e:
+        logging.error(f"Error parsing cron job list JSON: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error while listing reply cron jobs: {e}")
+
+    return []
+
+
+def remove_reply_job(job_id: str, job_name: str):
+    """Removes a reply cron job by id."""
+    try:
+        subprocess.run(
+            ["openclaw", "cron", "remove", job_id],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        logging.info(f"Removed stale reply job: {job_name} ({job_id})")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to remove reply job {job_name} ({job_id}): {e.stderr.strip()}")
+    except Exception as e:
+        logging.error(f"Unexpected error while removing job {job_name} ({job_id}): {e}")
+
+
+def cleanup_reply_jobs():
+    """
+    Cleans up old one-shot reply jobs so they do not accumulate forever.
+    Keeps only the newest few jobs, and removes anything older than the max age.
+    """
+    jobs = list_reply_jobs()
+    if not jobs:
+        return
+
+    now = datetime.now(timezone.utc)
+    decorated_jobs = []
+    for job in jobs:
+        job_name = str(job.get("name", ""))
+        parsed_time = parse_reply_job_timestamp(job_name)
+        decorated_jobs.append((job, parsed_time))
+
+    decorated_jobs.sort(
+        key=lambda item: item[1] or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+
+    jobs_to_remove = []
+    for index, (job, parsed_time) in enumerate(decorated_jobs):
+        should_remove = False
+        if index >= REPLY_JOB_KEEP_LATEST:
+            should_remove = True
+        if parsed_time is not None and now - parsed_time > timedelta(minutes=REPLY_JOB_MAX_AGE_MINUTES):
+            should_remove = True
+
+        if should_remove:
+            jobs_to_remove.append(job)
+
+    if not jobs_to_remove:
+        return
+
+    logging.info(
+        f"Cleaning up {len(jobs_to_remove)} stale reply cron job(s) "
+        f"(keeping latest {REPLY_JOB_KEEP_LATEST}, max age {REPLY_JOB_MAX_AGE_MINUTES}m)."
+    )
+    for job in jobs_to_remove:
+        job_id = str(job.get("id", "")).strip()
+        job_name = str(job.get("name", "")).strip()
+        if not job_id:
+            continue
+        remove_reply_job(job_id, job_name)
+
 def schedule_reply_agent(message_content: str):
     """Calls the OpenClaw CLI to schedule an immediate isolated agent job."""
     try:
+        cleanup_reply_jobs()
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         job_name = f"paipai-reply-agent-{timestamp}"
 
@@ -99,6 +203,7 @@ async def listen_to_paipai():
     }
     
     websocket_uri = f"wss://{BASE_URL.split('//')[1]}{WEBSOCKET_URI_PATH}"
+    cleanup_reply_jobs()
 
     while True:
         try:

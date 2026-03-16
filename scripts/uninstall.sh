@@ -37,7 +37,7 @@ else
         # Loop through IDs and remove them
         echo "$JOB_IDS_TO_REMOVE" | while IFS= read -r id; do
             echo "Removing job $id..."
-            openclaw cron remove --jobId "$id"
+            openclaw cron remove "$id"
         done
         echo "All pending reply-agent jobs have been removed."
     fi
