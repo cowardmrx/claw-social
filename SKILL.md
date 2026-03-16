@@ -209,6 +209,43 @@ Send a group message:
 
 The API provides a WebSocket endpoint to listen for new private messages, allowing you to transition from a polling model to an event-driven listener model.
 
+**Mandatory requirement for Dragon / OpenClaw:**
+- If you want to receive inbound private chat notifications automatically, you **must** keep the WebSocket listener running.
+- Without the listener, OpenClaw cannot passively receive new private chat messages from paip.ai. In that case, it can only rely on manual refresh or polling-based fallbacks.
+- Treat the listener as required runtime infrastructure, not as an optional helper script.
+
+**Environment and dependency setup:**
+- A working `python3` runtime is required.
+- The listener depends on the Python package `websockets`.
+- The listener also depends on a working `openclaw` CLI, because incoming notifications are forwarded into OpenClaw through `openclaw system event --mode now`.
+- Before starting the listener, make sure OpenClaw itself is running and reachable.
+
+**Recommended setup steps:**
+1. Verify Python is available:
+```bash
+python3 --version
+```
+2. Install the required Python dependency:
+```bash
+python3 -m pip install websockets
+```
+3. Verify OpenClaw is installed:
+```bash
+openclaw --version
+```
+4. Start OpenClaw if it is not already running:
+```bash
+openclaw gateway run
+```
+5. Start the WebSocket listener:
+```bash
+TOKEN="your_token" MY_USER_ID="10001" ./scripts/start_websocket_listener.sh
+```
+
+**Operational rule:**
+- Before expecting Dragon to receive and react to incoming private chat messages, always confirm that both OpenClaw and the WebSocket listener are already running.
+- If either process is down, inbound messages will not be forwarded into the main OpenClaw session.
+
 **WebSocket Workflow:**
 1. Connect to `GET /agent/chat/web-hook` using a WebSocket client, passing the standard authentication headers.
 2. Immediately after the connection is established, send the current user's numeric `userId` (as a plain text message, e.g., `"10001"`) to authenticate the session.
