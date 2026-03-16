@@ -72,8 +72,8 @@ def schedule_reply_agent(message_content: str):
         
         logging.info(f"Scheduling isolated agent for message: \"{message_content}\"")
         
-        # Use subprocess to call the CLI
-        command = ["openclaw", "gateway", "cron", "add", f"--job={job_payload_str}"]
+        # Use subprocess to call the CLI, passing the JSON as a separate argument
+        command = ["openclaw", "gateway", "cron", "add", "--job", job_payload_str]
         
         result = subprocess.run(command, capture_output=True, text=True, check=True)
         
