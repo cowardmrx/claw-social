@@ -1,147 +1,147 @@
+#!/usr/bin/env python3
 import asyncio
 import os
-import shlex
 import subprocess
-import sys
+import json
+import logging
 from datetime import datetime
 
-import websockets
-from websockets.exceptions import ConnectionClosed
-
 # --- Configuration ---
-# Support both the existing routine-style env vars and the listener-specific ones.
-AUTH_TOKEN = os.environ.get("PAIPAI_TOKEN") or os.environ.get("TOKEN")
-MY_USER_ID_RAW = os.environ.get("PAIPAI_USER_ID") or os.environ.get("MY_USER_ID")
+LOG_FILE = "/tmp/websocket_listener.log"
+EVENTS_LOG_FILE = "/tmp/websocket_listener_events.log"
+WEBSOCKET_URI_PATH = "/api/v1/agent/chat/web-hook"
+BASE_URL = "https://gateway.paipai.life"
 
-WEBSOCKET_URL = "wss://gateway.paipai.life/api/v1/agent/chat/web-hook"
-RECONNECT_DELAY_SECONDS = 5
-EVENT_LOG_PATH = os.environ.get("WEBSOCKET_EVENT_LOG", "/tmp/websocket_listener_events.log")
-OPENCLAW_COMMAND = shlex.split(
-    os.environ.get("OPENCLAW_EVENT_COMMAND", "openclaw system event --mode now")
+# --- Setup Logging ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler() # Also print to stdout/stderr
+    ]
 )
-HEADERS = {
-    "Authorization": f"Bearer {AUTH_TOKEN or ''}",
-    "X-Requires-Auth": "true",
-    "X-DEVICE-ID": "iOS",
-    "X-App-Version": "1.0",
-    "X-App-Build": "1",
-    "X-Response-Language": "zh-cn",
-    # The gateway expects the same style of headers as the REST APIs.
-    "X-User-Location": "MTE2LjQwNjd8MzkuODgyMnzljJfkuqzlpKnlnZs=",
-}
 
+# --- Helper Functions ---
+def get_env_vars():
+    """Fetches necessary environment variables."""
+    token = os.environ.get("PAIPAI_TOKEN")
+    user_id = os.environ.get("PAIPAI_USER_ID")
+    device_id = os.environ.get("PAIPAI_DEVICE_ID", "openclaw-default-device")
+    
+    if not token or not user_id:
+        logging.error("FATAL: PAIPAI_TOKEN and PAIPAI_USER_ID environment variables must be set.")
+        exit(1)
+    return token, user_id, device_id
 
-def log(message):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] {message}", flush=True)
+def create_job_payload(message_content: str) -> str:
+    """Creates the JSON payload for the OpenClaw cron job."""
+    
+    prompt = f"""
+    SYSTEM ALERT: HIGH-PRIORITY TASK INJECTED
+    You have received a new message on paip.ai. You MUST handle this now.
 
+    **Message Content:** "{message_content}"
 
-def append_event_log(notification_text):
-    timestamp = datetime.now().isoformat()
-    with open(EVENT_LOG_PATH, "a", encoding="utf-8") as event_log:
-        event_log.write(f"{timestamp}\t{notification_text}\n")
+    **Your mandatory task is as follows:**
+    1.  **Find the Room ID:** Immediately execute a search using the paip.ai API to find the chat session where the latest message content exactly matches the text above. This typically involves calling the `/agent/chat/session/list?withLatestMessage=true` endpoint and parsing the JSON response.
+    2.  **Extract the `roomId`** from the correct session object in the search result.
+    3.  **Formulate a Reply:** Based on the message content, formulate a natural, conversational reply.
+    4.  **Send the Reply:** Use the paip.ai API to send your formulated reply to the extracted `roomId`.
+    5.  **Confirm Completion:** After sending the reply, your task is complete.
+    """
+    
+    job = {
+        "schedule": {"kind": "at", "at": datetime.utcnow().isoformat() + "Z"},
+        "payload": {
+            "kind": "agentTurn",
+            "message": prompt,
+            "thinking": "high" # Use high thinking for this important task
+        },
+        "sessionTarget": "isolated",
+        "delivery": {"mode": "none"} # No need to announce, the job itself is the action
+    }
+    
+    return json.dumps(job)
 
-
-def validate_config():
-    if not AUTH_TOKEN:
-        log("FATAL: TOKEN or PAIPAI_TOKEN environment variable must be set.")
-        return None
-
-    if not MY_USER_ID_RAW:
-        log("FATAL: MY_USER_ID or PAIPAI_USER_ID environment variable must be set.")
-        return None
-
+def schedule_reply_agent(message_content: str):
+    """Calls the OpenClaw Gateway CLI to schedule an immediate isolated agent job."""
     try:
-        return int(MY_USER_ID_RAW)
-    except ValueError:
-        log(f"FATAL: user id must be numeric, got: {MY_USER_ID_RAW!r}")
-        return None
+        job_payload_str = create_job_payload(message_content)
+        
+        logging.info(f"Scheduling isolated agent for message: \"{message_content}\"")
+        
+        # Use subprocess to call the CLI
+        command = ["openclaw", "gateway", "cron", "add", f"--job={job_payload_str}"]
+        
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        
+        logging.info("Successfully scheduled isolated agent.")
+        logging.info(f"CLI Output: {result.stdout.strip()}")
 
-
-async def wake_openclaw(notification_text):
-    system_event_text = f"New message notification from paip.ai: '{notification_text}'"
-
-    try:
-        completed = await asyncio.to_thread(
-            subprocess.run,
-            [*OPENCLAW_COMMAND, "--text", system_event_text],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
     except FileNotFoundError:
-        log("WARNING: `openclaw` command not found in PATH; notification was not injected.")
-        return
-    except Exception as exc:
-        log(f"WARNING: failed to invoke openclaw: {exc}")
-        return
+        logging.error("Error: 'openclaw' command not found. Is the OpenClaw CLI in your system's PATH?")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Error calling OpenClaw CLI: {e}")
+        logging.error(f"Stderr: {e.stderr.strip()}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while scheduling the job: {e}")
 
-    if completed.returncode == 0:
-        log("Successfully injected event into OpenClaw main session.")
-        return
-
-    stderr = (completed.stderr or "").strip()
-    stdout = (completed.stdout or "").strip()
-    detail = stderr or stdout or f"exit code {completed.returncode}"
-    log(f"WARNING: OpenClaw event command failed: {detail}")
-
-
-# --- Main WebSocket Logic ---
-async def listen_to_paipai(my_user_id):
-    log(f"Attempting to connect to WebSocket as user {my_user_id}...")
-
-    try:
-        async with websockets.connect(
-            WEBSOCKET_URL,
-            additional_headers=HEADERS,
-            ping_interval=20,
-            ping_timeout=20,
-            close_timeout=10,
-        ) as websocket:
-            log("WebSocket connection established.")
-
-            # The backend expects the first frame to be a JSON number matching X-User-Id.
-            log(f"Authenticating with user ID: {my_user_id}")
-            await websocket.send(str(my_user_id))
-            log("Authentication message sent.")
-
-            while True:
-                message = await websocket.recv()
-
-                if isinstance(message, bytes):
-                    message = message.decode("utf-8", errors="replace")
-
-                message = message.strip()
-                if not message:
-                    log("Received an empty notification; ignoring.")
-                    continue
-
-                # The backend currently pushes only raw content, not a full message object.
-                log(f"Received raw notification: {message}")
-                append_event_log(message)
-                log(f"Saved raw notification to {EVENT_LOG_PATH}")
-                await wake_openclaw(message)
-
-    except ConnectionClosed as exc:
-        log(f"Connection closed: code={exc.code}, reason={exc.reason!r}")
-    except Exception as exc:
-        log(f"Failed to connect or an unhandled error occurred: {exc}")
-
-
-async def main():
-    my_user_id = validate_config()
-    if my_user_id is None:
-        sys.exit(1)
-
-    log(f"Using OpenClaw event command: {' '.join(OPENCLAW_COMMAND)}")
-    log(f"Writing raw notification events to: {EVENT_LOG_PATH}")
-    log(f"Listener process PID: {os.getpid()}")
+async def listen_to_paipai():
+    """Main function to connect to the WebSocket and listen for messages."""
+    token, user_id, device_id = get_env_vars()
+    
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-DEVICE-ID": device_id,
+        "X-Response-Language": "en-us",
+        "X-App-Version": "1.0",
+        "X-App-Build": "1",
+        "X-Requires-Auth": "true",
+    }
+    
+    websocket_uri = f"wss://{BASE_URL.split('//')[1]}{WEBSOCKET_URI_PATH}"
 
     while True:
-        await listen_to_paipai(my_user_id)
-        log(f"Restarting WebSocket listener in {RECONNECT_DELAY_SECONDS} seconds.")
-        await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+        try:
+            logging.info(f"Attempting to connect to WebSocket as user {user_id}...")
+            # We need to use a library that supports socks proxy if needed.
+            # `websockets` will automatically use `python-socks` if it's installed.
+            async with websockets.connect(websocket_uri, extra_headers=headers) as websocket:
+                logging.info("WebSocket connection established.")
+                
+                # Authenticate the connection
+                await websocket.send(user_id)
+                logging.info(f"Authenticated with user ID: {user_id}")
+                
+                # Listen for messages
+                async for message in websocket:
+                    message_content = str(message)
+                    logging.info(f"Received raw notification: {message_content}")
+                    
+                    # Log event to a separate file for record-keeping
+                    with open(EVENTS_LOG_FILE, "a") as f:
+                        f.write(f"[{datetime.now()}] {message_content}\n")
+                    
+                    # Schedule the isolated reply agent
+                    schedule_reply_agent(message_content)
 
+        except (websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK) as e:
+            logging.warning(f"WebSocket connection closed: {e}. Reconnecting in 10 seconds.")
+            await asyncio.sleep(10)
+        except Exception as e:
+            logging.error(f"An unhandled error occurred: {e}. Reconnecting in 10 seconds.")
+            await asyncio.sleep(10)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        import websockets
+    except ImportError:
+        logging.error("FATAL: The 'websockets' library is not installed. Please run 'pip3 install websockets'.")
+        exit(1)
+
+    try:
+        asyncio.run(listen_to_paipai())
+    except KeyboardInterrupt:
+        logging.info("Listener stopped by user.")

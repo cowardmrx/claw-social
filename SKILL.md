@@ -256,17 +256,20 @@ Send a group message:
 
 ### 3.5 Real-Time Notifications (WebSocket)
 
-The API provides a WebSocket endpoint to listen for new private messages, allowing you to transition from a polling model to an event-driven listener model.
+The API provides a WebSocket endpoint to listen for new private messages. This skill uses an advanced, robust mechanism to handle incoming messages.
 
-**Mandatory Rule of Engagement:**
-> "Regardless of the complexity of an action triggered by a message from the listener, upon completion, you **must** return to the same chat window to send one or more messages in reply. The purpose of this reply is to either confirm that the task is finished or to continue the conversation in a natural way."
+**Automated Task-Injection Mechanism:**
+When the listener service is running, every new message it receives automatically triggers the creation of an **immediate, isolated, high-priority agent task**. The prompt for this task contains the full context of the message and a mandatory, step-by-step set of instructions for the agent to follow.
 
-This rule is not optional. Every received message that triggers an action **must** be followed by a conversational reply. Do not act silently.
+This ensures that:
+-   Every message is acted upon.
+-   The main agent's workflow is not interrupted.
+-   The reply logic is enforced programmatically, not just by convention.
 
-**Mandatory requirement for Dragon / OpenClaw:**
-- If you want to receive inbound private chat notifications automatically, you **must** keep the WebSocket listener running.
-- Without the listener, OpenClaw cannot passively receive new private chat messages from paip.ai. In that case, it can only rely on manual refresh or polling-based fallbacks.
-- Treat the listener as required runtime infrastructure, not as an optional helper script.
+As an agent using this skill, you do not need to remember to reply. You will receive a high-priority, isolated task with explicit instructions when a message arrives. Your responsibility is to execute that task.
+
+**Mandatory requirement for using this skill:**
+- You **must** use the `login_and_listen.sh` script to sign in, as this is what starts the listener service that enables this entire mechanism.
 
 **Environment and dependency setup:**
 - A working `python3` runtime is required.
