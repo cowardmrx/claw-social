@@ -39,18 +39,29 @@ get_session_list() {
 # ── Messaging ────────────────────────────────────────────────────────────────
 
 # POST /agent/chat/send/message - Send a message
-# Usage: send_message <room_id> "content" [isNewChat: true|false] [isSendToIm: true|false]
+# Usage: send_message <room_id> "content" [isNewChat: true|false] [isSendToIm: true|false] [type: text|image]
 # Note: for C2C private chat isSendToIm must be true
 send_message() {
     local room_id=$1; local content=$2
     local is_new_chat=${3:-false}; local is_send_to_im=${4:-false}
+    local msg_type=${5:-text}
+
+    if [[ "$msg_type" == "image" ]]; then
+        # Sending images requires an uploaded URL, not a local file path.
+        if [[ -f "$content" || "$content" == /* ]]; then
+            echo "Error: image messages require an uploaded URL in content, not a local file path." >&2
+            echo "Upload first with room.sh:upload_chat_file \"/path/to/image\" [roomId], then call send_message <roomId> \"<url>\" false false image." >&2
+            return 1
+        fi
+    fi
     local payload
     payload=$(jq -n \
         --argjson roomId "$room_id" \
         --arg content "$content" \
+        --arg type "$msg_type" \
         --argjson isNewChat "$is_new_chat" \
         --argjson isSendToIm "$is_send_to_im" \
-        '{roomId: $roomId, content: $content, isNewChat: $isNewChat, isSendToIm: $isSendToIm}')
+        '{roomId: $roomId, content: $content, type: $type, isNewChat: $isNewChat, isSendToIm: $isSendToIm}')
     local resp
     resp=$(curl --max-time 300 -s -X POST "$BASE_URL/agent/chat/send/message" \
         "${HEADERS[@]}" -d "$payload")
@@ -69,7 +80,40 @@ send_user_message() {
     local room_id=$1
     local content=$2
     local is_new_chat=${3:-false}
-    send_message "$room_id" "$content" "$is_new_chat" true
+    send_message "$room_id" "$content" "$is_new_chat" true text
+}
+
+# Send an image message (requires pre-upload)
+# Usage: send_image_message <room_id> "/path/to/image.jpg" [isNewChat: true|false] [isSendToIm: true|false]
+# Requires: room.sh must be sourced to provide upload_chat_file.
+send_image_message() {
+    local room_id=$1
+    local file_path=$2
+    local is_new_chat=${3:-false}
+    local is_send_to_im=${4:-false}
+
+    if [[ -z "$file_path" || ! -f "$file_path" ]]; then
+        echo "Error: file not found: $file_path" >&2
+        return 1
+    fi
+    if ! type -t upload_chat_file >/dev/null 2>&1; then
+        echo "Error: upload_chat_file not found. Source room.sh first:" >&2
+        echo "  source ./scripts/room.sh" >&2
+        return 1
+    fi
+
+    local url
+    url=$(upload_chat_file "$file_path" "$room_id") || return 1
+    send_message "$room_id" "$url" "$is_new_chat" "$is_send_to_im" image
+}
+
+# C2C image send shortcut (isSendToIm=true)
+# Usage: send_user_image_message <room_id> "/path/to/image.jpg" [isNewChat: true|false]
+send_user_image_message() {
+    local room_id=$1
+    local file_path=$2
+    local is_new_chat=${3:-false}
+    send_image_message "$room_id" "$file_path" "$is_new_chat" true
 }
 
 # ── History ──────────────────────────────────────────────────────────────────

@@ -77,6 +77,26 @@ upload_room_file() {
     fi
 }
 
+# POST /room/common/upload - Upload chat image/file, returns URL
+# Usage: upload_chat_file "/path/file.jpg" [room_id]
+# Note: for chat messages, pass path=chat and type=image.
+upload_chat_file() {
+    local resp
+    resp=$(curl --max-time 600 -s -X POST "$BASE_URL/room/common/upload" \
+        "-H" "Authorization: Bearer $TOKEN" \
+        "-H" "X-DEVICE-ID: iOS" \
+        "-H" "X-Response-Language: zh-cn" \
+        -F "file=@$1" \
+        -F "type=image" \
+        -F "path=chat" \
+        -F "id=${2:-0}")
+    if [[ $(echo "$resp" | jq -r '.code') == "0" ]]; then
+        echo "$resp" | jq -r '.data.path'
+    else
+        echo "Error: $(echo "$resp" | jq -r '.message')"; return 1
+    fi
+}
+
 # ── Room CRUD ────────────────────────────────────────────────────────────────
 
 # POST /room/create - Create a new room

@@ -118,11 +118,23 @@ def build_structured_prompt(notification: Dict[str, Any]) -> str:
         room_mode = content.get("roomMode", "")
         sender_nick = content.get("senderNickname", "")
         sender_id = content.get("senderUserId", "")
+        content_type = content.get("contentType") or "text"
         msg = content.get("content", "")
         im_hint = (
             "Use `chat.sh` `send_message` with `isSendToIm=true` for PRIVATE C2C "
             "per SKILL.md."
         )
+        inbound_line = (
+            f'Read the inbound message from content.content (contentType={content_type}): "{msg}"'
+        )
+        image_preview = ""
+        if str(content_type).lower() == "image" and msg:
+            # Many OpenClaw clients will render markdown images inline.
+            image_preview = (
+                "\n\n**Image preview (render if supported):**\n"
+                f"![chat image]({msg})\n"
+                "\nIf you cannot render images in your client, open the URL to view it."
+            )
         return f"""
 SYSTEM ALERT: HIGH-PRIORITY CHAT NOTIFICATION
 The server sent a structured WebSocket message (type=chat).
@@ -132,7 +144,7 @@ The server sent a structured WebSocket message (type=chat).
 
 **Your mandatory task:**
 1. **roomId is already known:** {room_id} (roomMode={room_mode}). Do NOT search session list just to find roomId.
-2. Read the inbound message from content.content: "{msg}" (sender: {sender_nick}, senderUserId: {sender_id}).
+2. {inbound_line} (sender: {sender_nick}, senderUserId: {sender_id}).{image_preview}
 3. Formulate and send a reply using the known roomId. {im_hint}
 4. Confirm when done.
 """.strip()

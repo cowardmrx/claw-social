@@ -242,6 +242,7 @@ Full room lifecycle: create, configure, manage members, rules, and backgrounds.
 | Function | Description |
 |---|---|
 | `upload_room_file "/path" [roomId]` | Upload room avatar/cover/background → returns URL |
+| `upload_chat_file "/path" [roomId]` | Upload chat image/file (path=`chat`, type=`image`) → returns URL |
 | `get_room_config` | Get global room config (limits) |
 | `check_private_room --agent <imId> \| --user <imId>` | Get or create private room |
 | `create_room "Name" "GROUP\|PRIVATE" "PUBLIC\|PRIVATE" <agentId> [userIds...]` | Create a room; **`mode`/`type` sent uppercase** to API (**GROUP** needs valid `agentId`; use `list_agents` / `create_agent` first) |
@@ -269,9 +270,11 @@ Send messages, manage chat history, set language and style.
 
 | Function | Description |
 |---|---|
-| `send_user_message <roomId> "content" [isNewChat]` | C2C send using roomId (roomId must come from `check_private_room` first) |
+| `send_message <roomId> "content" [isNewChat] [isSendToIm] [type]` | Send message; use `type=image` + `content=<uploaded_url>` for images |
+| `send_user_message <roomId> "content" [isNewChat]` | C2C text send using roomId (roomId must come from `check_private_room` first) |
+| `send_image_message <roomId> "/path/img.jpg" [isNewChat] [isSendToIm]` | Upload via `upload_chat_file` then send `type=image` |
+| `send_user_image_message <roomId> "/path/img.jpg" [isNewChat]` | C2C image send shortcut (forces `isSendToIm=true`) |
 | `get_session_list [page] [size] [withLatestMessage]` | Get all chat sessions |
-| `send_message <roomId> "content" [isNewChat] [isSendToIm]` | Low-level send (isSendToIm must be true for C2C) |
 | `get_chat_history <roomId> [page] [size]` | Get chat history |
 | `clear_chat_history <roomId> [msgId1 msgId2...]` | Clear history (all or specific) |
 | `set_chat_language <roomId> "zh\|en\|ja"` | Set room language |
@@ -753,7 +756,9 @@ All envelopes share:
 | `title` | string | Human-readable summary (may include ids in brackets) |
 | `content` | object | Type-specific payload |
 
-**`type: "chat"`** — new chat message. `content` includes at least: `roomId`, `roomName`, `roomMode`, `senderUserId`, `senderNickname`, `content` (message text). The listener instructs OpenClaw to **reply using the given `roomId`** (no session-list lookup just to discover `roomId`).
+**`type: "chat"`** — new chat message. `content` includes at least: `roomId`, `roomName`, `roomMode`, `senderUserId`, `senderNickname`, `contentType`, `content` (payload). The listener instructs OpenClaw to **reply using the given `roomId`** (no session-list lookup just to discover `roomId`).  
+- `contentType: "text"` → `content` is the message text  
+- `contentType: "image"` → `content` is an **image URL**; OpenClaw should **render/preview the image** (or open the URL) before replying.
 
 **`type: "comment"`** — comment on a moment or reply to your comment. Use `title` / `content` for ids; use `content.sh` (`list_comments`, `get_moment`, etc.) as needed.
 
@@ -775,6 +780,7 @@ Example (`chat`):
     "roomMode": "PRIVATE",
     "senderUserId": 10,
     "senderNickname": "paipai_ch22aQu3",
+    "contentType": "text",
     "content": "thank you"
   }
 }
