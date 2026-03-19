@@ -3,15 +3,14 @@ import asyncio
 import os
 import json
 import logging
-import time
 import re
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 # --- Configuration ---
 EVENTS_LOG_FILE = "/tmp/websocket_listener_events.log"
 WEBSOCKET_URI_PATH = "/api/v1/agent/chat/web-hook"
-GATEWAY_BASE_URL = "wss://gateway.paipai.life"
+GATEWAY_BASE_URL = "ws://192.168.1.7:6666"
 SYSTEM_EVENT_TIMEOUT_MS = 180000
 SYSTEM_EVENT_MAX_ATTEMPTS = 2
 SYSTEM_EVENT_RETRY_DELAY_SECONDS = 3
@@ -19,9 +18,6 @@ SYSTEM_EVENT_RETRY_DELAY_SECONDS = 3
 # WebSocket: server restart / going away (RFC 6455) — reconnect on this close code
 WS_CLOSE_GOING_AWAY = 1001
 RECONNECT_DELAY_SECONDS = 10
-# Stop retrying after this many seconds without a successful connection; then notify OpenClaw and exit
-RECONNECT_MAX_SECONDS = 300
-OPENCLAW_FAILURE_NOTIFY_TIMEOUT_MS = 120000
 
 KNOWN_NOTIFICATION_TYPES = frozenset({"chat", "comment", "follow", "like", "collect"})
 
@@ -277,56 +273,6 @@ async def dispatch_reply_event(prompt: str, log_summary: str) -> bool:
     return False
 
 
-async def notify_openclaw_reconnect_exhausted(websocket_uri: str, user_id: str) -> None:
-    """Tell OpenClaw the listener gave up reconnecting after RECONNECT_MAX_SECONDS."""
-    prompt = f"""
-SYSTEM ALERT: paip.ai WebSocket listener RECONNECT FAILED
-
-The listener could not establish a WebSocket connection within {RECONNECT_MAX_SECONDS} seconds
-({RECONNECT_MAX_SECONDS // 60} minutes). Retries were spaced {RECONNECT_DELAY_SECONDS} seconds apart.
-
-**Endpoint:** {websocket_uri}
-**User ID:** {user_id}
-
-**What you should do:**
-1. Check network connectivity and whether the gateway is reachable.
-2. Verify TOKEN / user id are still valid (re-run login if needed).
-3. Restart the listener: `scripts/start_websocket_listener.sh`
-
-This process will exit after sending this notice.
-""".strip()
-
-    try:
-        process = await asyncio.create_subprocess_exec(
-            "openclaw",
-            "system",
-            "event",
-            "--mode",
-            "now",
-            "--expect-final",
-            "--timeout",
-            str(OPENCLAW_FAILURE_NOTIFY_TIMEOUT_MS),
-            "--json",
-            "--text",
-            prompt,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await process.communicate()
-        if process.returncode != 0:
-            logging.error(
-                "OpenClaw failure notify exited %s stderr=%r",
-                process.returncode,
-                stderr.decode().strip(),
-            )
-        elif stdout:
-            logging.info("OpenClaw failure notify stdout: %s", stdout.decode().strip()[:500])
-    except FileNotFoundError:
-        logging.error(
-            "openclaw CLI not found; cannot notify OpenClaw about reconnect failure."
-        )
-
-
 async def reply_worker(reply_queue: asyncio.Queue):
     """Dispatches inbound messages promptly (bounded concurrency)."""
     semaphore = asyncio.Semaphore(MAX_INFLIGHT_OPENCLAW_EVENTS)
@@ -367,28 +313,13 @@ async def listen_to_paipai():
 
     websocket_uri = f"{GATEWAY_BASE_URL.rstrip('/')}{WEBSOCKET_URI_PATH}"
     websocket_uri = websocket_uri.replace("https://", "wss://").replace("http://", "ws://")
-    reconnect_deadline: Optional[float] = None
 
     async def after_connection_failure() -> None:
-        """Start or check 5-minute reconnect budget, then sleep or exit."""
-        nonlocal reconnect_deadline
-        now = time.monotonic()
-        if reconnect_deadline is None:
-            reconnect_deadline = now + RECONNECT_MAX_SECONDS
-            logging.warning(
-                "Reconnect budget started: must connect within %s s (%s min).",
-                RECONNECT_MAX_SECONDS,
-                RECONNECT_MAX_SECONDS // 60,
-            )
-        remaining = max(0, int(reconnect_deadline - now))
-        if now >= reconnect_deadline:
-            logging.error(
-                "Reconnect budget exhausted (%s s without a stable connection).",
-                RECONNECT_MAX_SECONDS,
-            )
-            await notify_openclaw_reconnect_exhausted(websocket_uri, user_id)
-            raise SystemExit(1)
-        logging.warning("Retrying WebSocket connect in %ss (budget remaining: %ss).", RECONNECT_DELAY_SECONDS, remaining)
+        """Wait and retry until the next connect attempt (no give-up timeout)."""
+        logging.warning(
+            "Will retry WebSocket connect in %ss (until connection succeeds).",
+            RECONNECT_DELAY_SECONDS,
+        )
         await asyncio.sleep(RECONNECT_DELAY_SECONDS)
 
     try:
@@ -396,7 +327,6 @@ async def listen_to_paipai():
             try:
                 logging.info(f"Connecting WebSocket as user {user_id}...")
                 async with websockets.connect(websocket_uri, additional_headers=headers) as websocket:
-                    reconnect_deadline = None
                     logging.info("WebSocket connected.")
                     await websocket.send(user_id)
                     logging.info(f"Authenticated with user ID: {user_id}")
