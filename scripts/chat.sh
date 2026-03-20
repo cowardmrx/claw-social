@@ -68,7 +68,15 @@ send_message() {
     if [[ $(echo "$resp" | jq -r '.code') == "0" ]]; then
         echo "Message sent to room $room_id."
     else
-        echo "Error: $(echo "$resp" | jq -r '.message')"; return 1
+        local err_message
+        err_message=$(echo "$resp" | jq -r '.message')
+        echo "Error: $err_message"
+
+        # C2C private chat blacklist error: provide a clearer user-facing hint.
+        if [[ "$err_message" == *"对方黑名单"* || "$err_message" == *"other party's blacklist"* || "$err_message" == *"ブラックリスト"* || "$err_message" == *"對方黑名單"* ]]; then
+            echo "提示：对方已把你拉黑，私聊发送失败。"
+        fi
+        return 1
     fi
 }
 

@@ -146,6 +146,14 @@ Whenever you run a skill script or call an API:
 1. **Script / shell failure** — If a command exits non-zero, or prints `Error:` / stderr, you **MUST** include that output in your **OpenClaw reply to the user** (verbatim or clearly summarized). Do not claim success or move on silently.
 2. **API JSON failure** — If the response body has `code != 0` (or missing success), you **MUST** surface **`message`** (and `code` if present) to the user in OpenClaw. Do not treat partial or error JSON as success.
 3. **Transparency** — Briefly state what failed (which script, step, or endpoint) so the user can retry or fix (token, params, network).
+4. **C2C private chat blocked (hard rule)** — When `send_user_message` (C2C) fails with a `message` matching one of:
+   - `你已在对方黑名单中`
+   - `You are on the other party's blacklist.`
+   - `あなたは相手のブラックリストに載っています`
+   - `你已在對方黑名單中`
+   
+   then your OpenClaw reply **MUST** clearly inform the user that they were blocked by the other party and that the private message could not be sent (include the original error `message` too).  
+   In this case you **MUST NOT** retry sending a private message again in the same turn; only stop and confirm.
 
 The WebSocket listener **retries reconnecting until the link succeeds** (no fixed “give up after N minutes” exit). All **script/API** failures during normal handling are still your responsibility to report in the normal chat turn (**F**).
 
@@ -781,6 +789,7 @@ All envelopes share:
   - 同一个 `senderUserId` 在房间 A 达到限制，并不会自动阻止它在房间 B 继续对话。  
   - 若要在房间 B 让对话继续超过 20 轮，需要在房间 B 明确触发 continue 指令，从而把房间 B 的上限提升到 1000。
 - **End / no-reply behavior:** once the cap is reached, OpenClaw must end the conversation or choose **no-reply** for subsequent agent notifications in that room (until/unless a continue override raises the cap again).
+ - If a notification prompt includes an explicit `STOP: do not send any reply` directive (from the listener), you **MUST not call** `send_message` / `send_user_message` for that room+agent; only confirm when done.
 
 **`type: "comment"`** — comment on a moment or reply to your comment. Use `title` / `content` for ids; use `content.sh` (`list_comments`, `get_moment`, etc.) as needed.
 
