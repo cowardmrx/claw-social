@@ -26,56 +26,94 @@ KNOWN_NOTIFICATION_TYPES = frozenset({"chat", "comment", "follow", "like", "coll
 # for earlier events to complete. Bound concurrency to avoid flooding the CLI/runtime.
 MAX_INFLIGHT_OPENCLAW_EVENTS = 4
 
-# Agent dialog safety limit:
-# If a WebSocket chat comes from a senderUserType="agent", do not allow
-# unlimited back-and-forth. We cap the number of OpenClaw reply rounds per
-# senderUserId and instruct OpenClaw to end/no-reply after the cap.
-MAX_AGENT_DIALOG_ROUNDS = 20
-AGENT_DIALOG_ROUND_STATE_FILE = "/tmp/websocket_listener_agent_dialog_rounds.json"
-_agent_dialog_round_lock = threading.Lock()
-_agent_dialog_rounds: Dict[str, int] = {}
+# Agent dialog safety limits (scoped per room/private dialog, not global):
+# - default cap: 20 rounds for agent chats in one room/dialog.
+# - if a clear "continue" command appears in that same room, cap is raised to 1000.
+DEFAULT_AGENT_DIALOG_ROUNDS = 20
+EXTENDED_AGENT_DIALOG_ROUNDS = 1000
+AGENT_DIALOG_STATE_FILE = "/tmp/websocket_listener_agent_dialog_state.json"
+_agent_dialog_lock = threading.Lock()
+_agent_dialog_rounds_by_scope: Dict[str, int] = {}
+_agent_dialog_limits_by_room: Dict[str, int] = {}
+
+_CONTINUE_COMMAND_RE = re.compile(
+    r"(继续|继续聊|继续对话|继续回复|继续和(他|她|ta|agent)聊|continue|keep\s+going)",
+    re.IGNORECASE,
+)
 
 
-def _load_agent_dialog_rounds() -> None:
-    global _agent_dialog_rounds
+def _room_scope_key(room_id: Any) -> str:
+    return str(room_id) if room_id is not None and str(room_id) != "" else "unknown-room"
+
+
+def _counter_scope_key(room_id: Any, sender_user_id: Any) -> str:
+    return f"{_room_scope_key(room_id)}::{sender_user_id}"
+
+
+def _load_agent_dialog_state() -> None:
+    global _agent_dialog_rounds_by_scope, _agent_dialog_limits_by_room
     try:
-        if os.path.exists(AGENT_DIALOG_ROUND_STATE_FILE):
-            with open(AGENT_DIALOG_ROUND_STATE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                _agent_dialog_rounds = {str(k): int(v) for k, v in data.items()}
+        if not os.path.exists(AGENT_DIALOG_STATE_FILE):
+            return
+        with open(AGENT_DIALOG_STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return
+        rounds = data.get("roundsByScope", {})
+        limits = data.get("limitsByRoom", {})
+        if isinstance(rounds, dict):
+            _agent_dialog_rounds_by_scope = {str(k): int(v) for k, v in rounds.items()}
+        if isinstance(limits, dict):
+            _agent_dialog_limits_by_room = {str(k): int(v) for k, v in limits.items()}
     except Exception as e:
-        logging.warning("Failed to load agent dialog rounds state: %s", e)
+        logging.warning("Failed to load agent dialog state: %s", e)
 
 
-def _save_agent_dialog_rounds() -> None:
+def _save_agent_dialog_state() -> None:
+    payload = {
+        "roundsByScope": _agent_dialog_rounds_by_scope,
+        "limitsByRoom": _agent_dialog_limits_by_room,
+    }
     try:
-        with open(AGENT_DIALOG_ROUND_STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(_agent_dialog_rounds, f, ensure_ascii=False, indent=2)
+        with open(AGENT_DIALOG_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logging.warning("Failed to save agent dialog rounds state: %s", e)
+        logging.warning("Failed to save agent dialog state: %s", e)
 
 
-def _record_agent_dialog_round(sender_user_id: Any) -> Tuple[int, bool]:
-    """
-    Increments the reply-round counter for an agent sender (up to the cap).
+def _current_agent_dialog_limit(room_id: Any) -> int:
+    return int(_agent_dialog_limits_by_room.get(_room_scope_key(room_id), DEFAULT_AGENT_DIALOG_ROUNDS))
 
-    Returns:
-      (round_number, reply_allowed)
-    where round_number is the current counter value after applying the cap logic.
-    """
-    sid = str(sender_user_id)
-    with _agent_dialog_round_lock:
-        prior = int(_agent_dialog_rounds.get(sid, 0))
-        if prior >= MAX_AGENT_DIALOG_ROUNDS:
-            return prior, False
+
+def _has_explicit_continue_command(text: Any) -> bool:
+    if not isinstance(text, str):
+        return False
+    return _CONTINUE_COMMAND_RE.search(text.strip()) is not None
+
+
+def _enable_extended_agent_dialog_limit(room_id: Any) -> None:
+    rkey = _room_scope_key(room_id)
+    with _agent_dialog_lock:
+        _agent_dialog_limits_by_room[rkey] = EXTENDED_AGENT_DIALOG_ROUNDS
+        _save_agent_dialog_state()
+
+
+def _record_agent_dialog_round(room_id: Any, sender_user_id: Any) -> Tuple[int, bool, int]:
+    """Returns (round_number, reply_allowed, cap) for this room+sender scope."""
+    ckey = _counter_scope_key(room_id, sender_user_id)
+    rkey = _room_scope_key(room_id)
+    with _agent_dialog_lock:
+        cap = int(_agent_dialog_limits_by_room.get(rkey, DEFAULT_AGENT_DIALOG_ROUNDS))
+        prior = int(_agent_dialog_rounds_by_scope.get(ckey, 0))
+        if prior >= cap:
+            return prior, False, cap
         now_round = prior + 1
-        _agent_dialog_rounds[sid] = now_round
-        _save_agent_dialog_rounds()
-        return now_round, True
+        _agent_dialog_rounds_by_scope[ckey] = now_round
+        _save_agent_dialog_state()
+        return now_round, True, cap
 
 
-_load_agent_dialog_rounds()
+_load_agent_dialog_state()
 
 # --- Setup Logging ---
 logging.basicConfig(
@@ -175,21 +213,40 @@ def build_structured_prompt(notification: Dict[str, Any]) -> str:
         msg = content.get("content", "")
         agent_round_info = ""
         reply_allowed = True
-        if str(sender_user_type).lower() == "agent":
-            round_number, reply_allowed = _record_agent_dialog_round(sender_id)
+        room_mode_norm = str(room_mode).upper()
+        enforce_agent_cap = (
+            str(sender_user_type).lower() == "agent"
+            and room_mode_norm in {"GROUP", "PRIVATE"}
+        )
+        extend_cap = (
+            str(content_type).lower() == "text"
+            and room_mode_norm in {"GROUP", "PRIVATE"}
+            and _has_explicit_continue_command(msg)
+        )
+
+        if extend_cap:
+            _enable_extended_agent_dialog_limit(room_id)
             agent_round_info = (
-                f"\n\n**Agent dialog safety limit:** senderUserId={sender_id}, "
-                f"round={round_number}/{MAX_AGENT_DIALOG_ROUNDS}. "
+                f"\n\n**Agent dialog limit updated:** explicit continue command detected in room {room_id}. "
+                f"This room now uses cap={EXTENDED_AGENT_DIALOG_ROUNDS} rounds."
+            )
+
+        if enforce_agent_cap:
+            round_number, reply_allowed, cap = _record_agent_dialog_round(room_id, sender_id)
+            agent_round_info = (
+                f"\n\n**Agent dialog safety limit (scoped to roomMode/group-private):** roomId={room_id}, "
+                f"senderUserId={sender_id}, round={round_number}/{cap}. "
             )
             if not reply_allowed:
                 agent_round_info += (
-                    "You MUST stop the conversation with this agent and MUST NOT send any "
-                    "message to them. Confirm when done."
+                    "You MUST stop the conversation with this agent in this room and MUST NOT "
+                    "send any message to them unless a clear continue command raises the cap. "
+                    "Confirm when done."
                 )
-            elif round_number >= MAX_AGENT_DIALOG_ROUNDS:
+            elif round_number >= cap:
                 agent_round_info += (
                     "This is the final allowed round. Your reply MUST end the conversation "
-                    "and you MUST NOT reply to this agent again on subsequent notifications."
+                    "for this room."
                 )
         im_hint = (
             "Use `chat.sh` `send_message` with `isSendToIm=true` for PRIVATE C2C "
