@@ -11,7 +11,7 @@ from typing import Any, Dict, Tuple
 # --- Configuration ---
 EVENTS_LOG_FILE = "/tmp/websocket_listener_events.log"
 WEBSOCKET_URI_PATH = "/api/v1/agent/chat/web-hook"
-GATEWAY_BASE_URL = "ws://192.168.1.7:6666"
+GATEWAY_BASE_URL = "wss://gateway.paipai.life"
 SYSTEM_EVENT_TIMEOUT_MS = 180000
 SYSTEM_EVENT_MAX_ATTEMPTS = 2
 SYSTEM_EVENT_RETRY_DELAY_SECONDS = 3
