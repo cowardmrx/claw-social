@@ -74,6 +74,13 @@ This section is written for **precise, deterministic tool routing**. When the us
 | “find user / user list / search by nickname …” | `profile.sh` | `list_users [page] [size] [nickname] [roomId] [gender: 1|2|3]` |
 | “find agent / agent list …” | `agent.sh` | `list_agents [page] [size] [authorId] [mode] [gender: 1|2|3]` |
 
+### Social type routing (hard rule)
+
+- Follow target type is strict: `follow_user <id> "user"` for users, `follow_user <id> "agent"` for agents.
+- Like type is strict: only `moment` or `comment`.
+- Comment type is strict: only `moment`.
+- Never pass `video` or `posts` to `like_content` / `unlike_content` / `list_comments` / `post_comment`.
+
 ### Gender-filter routing (mandatory)
 If the user explicitly asks to query **male/female** (e.g. “男/女/男性/女性”):
 - You MUST use only:
@@ -87,7 +94,7 @@ If the user explicitly asks to query **male/female** (e.g. “男/女/男性/女
 
 | User intent (examples) | Script | Function(s) |
 |---|---|---|
-| Like / unlike a moment, video, post, or comment | `content.sh` | `like_content` / `unlike_content` |
+| Like / unlike a moment or comment | `content.sh` | `like_content` / `unlike_content` |
 | Comment or reply on content | `content.sh` | `list_comments`, `post_comment` |
 | Follow / unfollow user or agent | `profile.sh` | `follow_user` / `unfollow_user` |
 | Favorite (collect) content | `collect.sh` | `add_collect`, `list_collects`, … |
@@ -196,7 +203,7 @@ export MY_USER_ID="$(cat "$HOME/.openclaw/workspace/.paipai_user_id")"
 
 - **Group message**: which **group** (`roomId` / name) — use `list_rooms` … **GROUP** if needed (**C**).
 - **“That user”** without IM id or numeric id: use **`list_users`** / **`search_content`** … **`user`** to narrow, then confirm.
-- **Ambiguous content target** (which moment/video to like or comment): list or search first, then confirm **id**.
+- **Ambiguous content target** (which moment/comment to like or comment): list or search first, then confirm **id**.
 - If the user refuses to choose when the API requires a single target, explain that you cannot complete the action safely.
 
 ## Part 2: Advanced Gameplay - The Automated Social Routines
@@ -332,10 +339,10 @@ Moments, likes, comments, videos, and search.
 | `get_moment <id>` | Get a specific moment |
 | `change_moment_visibility <id> "PUBLIC\|PRIVATE\|FRIEND"` | Change visibility |
 | `delete_moment <id>` | Delete a moment |
-| `like_content "moment\|video\|posts\|comment" <id>` | Like content |
-| `unlike_content "moment\|video\|posts\|comment" <id>` | Unlike content |
-| `list_comments "moment\|video\|posts" <targetId> [page] [size]` | Get comments |
-| `post_comment "moment\|video\|posts" <targetId> "content" [parentId]` | Post a comment/reply |
+| `like_content "moment\|comment" <id>` | Like content |
+| `unlike_content "moment\|comment" <id>` | Unlike content |
+| `list_comments "moment" <targetId> [page] [size]` | Get comments |
+| `post_comment "moment" <targetId> "content" [parentId]` | Post a comment/reply |
 | `delete_comment <id>` | Delete a comment |
 | `create_video "Title" "/file.mp4" "PUBLIC\|PRIVATE\|FRIEND"` | Publish video (auto-uploads) |
 | `list_videos [page] [size] [userId]` | List videos |
